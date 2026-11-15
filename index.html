@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>胶囊移动 · 接触演练视窗</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <div>
+            <h1>胶囊移动 · 接触演练视窗</h1>
+            <p class="subtitle">Capsule Sweep &amp; Constrained Slide Playground</p>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button id="btn-respawn" class="btn btn-ghost" type="button" title="回到起点（R）">重置位置</button>
+          <button id="btn-replay" class="btn btn-ghost" type="button" title="运行边界场景重放检查">重放检查</button>
+          <button id="btn-pause" class="btn btn-accent" type="button" title="暂停/继续（P）">暂停</button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="stage">
+          <div id="viewport" class="viewport" aria-label="三维胶囊移动演练">
+            <div class="viewport-hud">
+              <div class="hud-stat"><span class="hud-label">状态</span><span id="hud-state" class="hud-value">—</span></div>
+              <div class="hud-stat"><span class="hud-label">地面角</span><span id="hud-angle" class="hud-value">—</span></div>
+              <div class="hud-stat"><span class="hud-label">速度</span><span id="hud-speed" class="hud-value">—</span></div>
+              <div class="hud-stat"><span class="hud-label">穿透</span><span id="hud-pen" class="hud-value">—</span></div>
+            </div>
+            <div class="viewport-help">
+              <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动</span>
+              <span><kbd>Space</kbd> 跳跃</span>
+              <span><kbd>Shift</kbd> 加速</span>
+              <span>拖拽旋转 · 滚轮缩放</span>
+            </div>
+          </div>
+          <div class="legend">
+            <span class="legend-item"><i class="dot dot-support"></i>地面支撑点</span>
+            <span class="legend-item"><i class="dot dot-contact"></i>接触点 / 法线</span>
+            <span class="legend-item"><i class="dot dot-blocked"></i>受阻位移</span>
+            <span class="legend-item"><i class="dot dot-step"></i>台阶抬升</span>
+          </div>
+        </section>
+
+        <aside class="panel">
+          <div class="panel-block">
+            <h2>胶囊碰撞体</h2>
+            <label class="field">
+              <span>半径 <output id="out-radius">0.35 m</output></span>
+              <input id="in-radius" type="range" min="0.18" max="0.75" step="0.01" value="0.35" />
+            </label>
+            <label class="field">
+              <span>高度 <output id="out-height">1.70 m</output></span>
+              <input id="in-height" type="range" min="0.8" max="2.6" step="0.01" value="1.7" />
+            </label>
+            <div class="field-row">
+              <label class="field">
+                <span>坡度上限 <output id="out-slope">46°</output></span>
+                <input id="in-slope" type="range" min="20" max="70" step="1" value="46" />
+              </label>
+              <label class="field">
+                <span>台阶高度 <output id="out-step">0.32 m</output></span>
+                <input id="in-step" type="range" min="0" max="0.6" step="0.01" value="0.32" />
+              </label>
+            </div>
+            <label class="toggle">
+              <input id="in-show-contact" type="checkbox" checked />
+              <span>显示接触点与法线</span>
+            </label>
+            <label class="toggle">
+              <input id="in-show-capsule" type="checkbox" checked />
+              <span>显示胶囊线框</span>
+            </label>
+            <label class="toggle">
+              <input id="in-show-trail" type="checkbox" checked />
+              <span>显示运动轨迹</span>
+            </label>
+          </div>
+
+          <div class="panel-block">
+            <h2>场景传送</h2>
+            <div class="scenario-grid" id="scenario-grid"></div>
+          </div>
+
+          <div class="panel-block results">
+            <h2>结果区 · 地面运动与接触</h2>
+            <div class="result-row"><span>请求位移</span><b id="res-request">—</b></div>
+            <div class="result-row"><span>实际位移</span><b id="res-actual">—</b></div>
+            <div class="result-row"><span>地面运动 · 法线</span><b id="res-normal">—</b></div>
+            <div class="result-row"><span>支撑面投影 · Δ</span><b id="res-plane">—</b></div>
+            <div class="result-row"><span>地面支撑 · 点</span><b id="res-point">—</b></div>
+            <div class="result-row"><span>支撑面</span><b id="res-surface">—</b></div>
+            <div class="result-row"><span>接触数</span><b id="res-contacts">—</b></div>
+            <div class="result-row"><span>台阶判定</span><b id="res-step">—</b></div>
+            <div class="result-row"><span>滑动求解</span><b id="res-slide">—</b></div>
+            <div class="result-row"><span>解穿 / 穿透</span><b id="res-depen">—</b></div>
+            <div id="contact-list" class="contact-list"></div>
+          </div>
+
+          <div class="panel-block">
+            <h2>重放检查</h2>
+            <div class="check-summary" id="check-summary">尚未运行</div>
+            <ul class="check-list" id="check-list"></ul>
+            <button id="btn-run-checks" class="btn btn-primary full" type="button">运行全部边界场景检查</button>
+          </div>
+        </aside>
+      </main>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

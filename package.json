@@ -1,0 +1,31 @@
+{
+  "name": "workspace",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "replay": "node src/replay.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cinderrapid8/cc-5071-1.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/cinderrapid8/cc-5071-1/issues"
+  },
+  "homepage": "https://github.com/cinderrapid8/cc-5071-1#readme",
+  "dependencies": {
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.65.1",
+    "vite": "^8.3.8"
+  },
+  "type": "module"
+}
