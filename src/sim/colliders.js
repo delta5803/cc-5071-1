@@ -221,7 +221,7 @@ export function maxPenetration(center, halfSeg, radius, colliders, cfg) {
  * whose margin equals the step. A small bounded loop handles the remaining
  * motion after a contact resolves.
  */
-export function sweepCapsule(startPos, halfSeg, radius, delta, colliders, cfg) {
+export function sweepCapsule(startPos, halfSeg, radius, delta, colliders, cfg, options = {}) {
   const total = length(delta);
   const dir = total > EPS ? scale(delta, 1 / total) : vec3();
   let pos = { ...startPos };
@@ -232,8 +232,8 @@ export function sweepCapsule(startPos, halfSeg, radius, delta, colliders, cfg) {
     return { position: pos, moved: vec3(), travelled: 0, hit: null, iterations: 0, contacts: collectContacts(pos, halfSeg, radius, colliders, cfg) };
   }
 
-  const maxIterations = Math.max(1, Math.min(cfg.maxSweepIterations, 4));
-  while (budget > 1e-7 && iterations < maxIterations) {
+  const iterationCap = options.maxIterations ?? Math.max(1, Math.min(cfg.maxSweepIterations, 4));
+  while (budget > 1e-7 && iterations < iterationCap) {
     iterations++;
     const step = budget;
     // Any surface within `step` can be reached, so query at least that far.
@@ -292,6 +292,7 @@ export function sweepCapsule(startPos, halfSeg, radius, delta, colliders, cfg) {
     moved: sub(pos, startPos),
     travelled: total - budget,
     hit,
+    truncated: budget > 1e-7 && !hit,
     iterations,
     contacts: collectContacts(pos, halfSeg, radius, colliders, cfg),
   };

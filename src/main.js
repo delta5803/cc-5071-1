@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { buildCourse } from './course.js';
-import { CharacterController } from './sim/character.js';
+import { CharacterController, STEP_SCHEMES } from './sim/character.js';
 import { runReplayChecks } from './replay.js';
 
 const $ = (id) => document.getElementById(id);
@@ -12,6 +12,27 @@ const viewportEl = $('viewport');
 const course = buildCourse();
 const features = course.features;
 const controller = new CharacterController().setColliders(course.colliders);
+
+// Step-scheme metadata for the segmented control. 'lift-first' is the original
+// assessStep sample kept as the baseline; the two experiment solvers live in
+// sim/step-schemes.js.
+const SCHEME_OPTIONS = [
+  {
+    id: 'lift-first',
+    name: '旧样例 · 抬升-前移-落脚',
+    hint: '原始 assessStep：几何门控后整体抬升到台阶上限，再前移一个半径、落脚校验。作为对照基线保留，重放检查仍在该方案下跑完全程。',
+  },
+  {
+    id: STEP_SCHEMES.HORIZONTAL_FIRST,
+    name: '水平扫描再抬升',
+    hint: '先在当前高度做完整水平扫掠，<b>撞上立面会被记录为 riser-block</b>，再按实测抬升量+球心下垂量抬升；矮顶时净空预算会钳制抬升。',
+  },
+  {
+    id: STEP_SCHEMES.CONSTRAINED_CANDIDATES,
+    name: '受限多候选运动求解',
+    hint: '同时构造抬升优先、对角切角、贴坡爬升三条有界候选路径，逐条过扫掠/净空/路径穿透门控，首个可行者胜出并解释选中原因。',
+  },
+];
 
 const rad = (d) => (d * Math.PI) / 180;
 const rampFeet = (ramp, z) => ramp.yBase + (ramp.zStart - z) * Math.tan(rad(ramp.angleDeg));
@@ -318,6 +339,11 @@ let lastTelemetry = null;
 let lastStep = null;
 let lastStepEvent = null;
 let lastSlideEvent = null;
+// Sticky anomaly state: geometric rejections and ground-motion blocks are
+// instantaneous events, but a user looking at the viewport after the capsule
+// has settled must still see that something was abnormal. Telemetry counters
+// feed this each frame; teleport/reset clears it.
+let anomalyState = { blocked: 0, rejected: 0, overLimit: 0, pathPen: 0, residualPen: 0 };
 let walkPhase = 0;
 let facing = 0;
 let cameraSnap = true;
@@ -349,6 +375,7 @@ function teleportToScenario(id, { announce = true } = {}) {
   lastStep = null;
   lastStepEvent = null;
   lastSlideEvent = null;
+  anomalyState = { blocked: 0, rejected: 0, overLimit: 0, pathPen: 0, residualPen: 0 };
   clearTrail();
   pushTrail({ x: controller.position.x, y: controller.feetY + 0.03, z: controller.position.z });
   camState.yaw = s.cameraYaw ?? 0;
@@ -365,6 +392,7 @@ function settleOnce() {
   rememberFrameEvents(tel);
   updateHUD();
   renderPanel();
+  detectAnomalies(tel);
 }
 
 // ---------------------------------------------------------------------------
@@ -458,6 +486,7 @@ function startLiveReplay() {
   lastStep = null;
   lastStepEvent = null;
   lastSlideEvent = null;
+  anomalyState = { blocked: 0, rejected: 0, overLimit: 0, pathPen: 0, residualPen: 0 };
   clearTrail();
   pushTrail({ x: controller.position.x, y: controller.feetY + 0.03, z: controller.position.z });
   camState.yaw = 0;
@@ -524,6 +553,40 @@ $('in-show-trail').addEventListener('change', (e) => {
   trail.visible = trailEnabled;
   if (!trailEnabled) clearTrail();
 });
+
+// step-scheme segmented control
+const schemeGrid = $('scheme-grid');
+const schemeHint = $('scheme-hint');
+
+function setActiveSchemeButton(id) {
+  for (const btn of schemeGrid.querySelectorAll('.scheme-btn')) {
+    btn.classList.toggle('active', btn.dataset.scheme === id);
+  }
+  const opt = SCHEME_OPTIONS.find((o) => o.id === id);
+  schemeHint.innerHTML = opt ? opt.hint : '';
+}
+
+function setStepScheme(id) {
+  if (!SCHEME_OPTIONS.some((o) => o.id === id)) return;
+  controller.configure({ stepScheme: id });
+  setActiveSchemeButton(id);
+  lastStep = null;
+  lastStepEvent = null;
+  lastSlideEvent = null;
+  settleOnce();
+}
+
+for (const opt of SCHEME_OPTIONS) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'scheme-btn';
+  btn.dataset.scheme = opt.id;
+  btn.innerHTML = `<b>${opt.name.split(' · ')[0]}</b><small>${opt.name.split(' · ')[1] || ''}</small>`;
+  btn.title = opt.hint.replace(/<[^>]+>/g, '');
+  btn.addEventListener('click', () => setStepScheme(opt.id));
+  schemeGrid.appendChild(btn);
+}
+setActiveSchemeButton(controller.cfg.stepScheme);
 
 syncOutputs();
 $('in-show-capsule').checked = true;
@@ -808,7 +871,7 @@ function setRow(id, text, tone = '') {
 function renderPanel() {
   const tel = lastTelemetry;
   if (!tel) {
-    for (const id of ['res-request', 'res-actual', 'res-normal', 'res-plane', 'res-point', 'res-surface', 'res-contacts', 'res-step', 'res-slide', 'res-depen']) {
+    for (const id of ['res-request', 'res-actual', 'res-normal', 'res-plane', 'res-point', 'res-surface', 'res-contacts', 'res-step', 'res-scheme', 'res-slide', 'res-depen']) {
       setRow(id, '—');
     }
     $('contact-list').innerHTML = '<div class="contact-empty">等待角色移动…</div>';
@@ -873,6 +936,8 @@ function renderPanel() {
     setRow('res-step', `未触发（抬升上限 ${controller.cfg.stepHeight.toFixed(2)} m）`);
   }
 
+  renderSchemeRow(tel);
+
   if (lastSlideEvent) {
     const sl = lastSlideEvent.slide;
     const age = tel.frame - lastSlideEvent.frame;
@@ -916,6 +981,89 @@ function renderPanel() {
     }
     list.replaceChildren(fragment);
   }
+}
+
+// Scheme-specific evidence: chosen candidate / rejection reason / headroom /
+// path penetration. Only the two experiment solvers populate these fields; the
+// legacy lift-first sample shows its baseline status instead.
+function renderSchemeRow(tel) {
+  const scheme = controller.cfg.stepScheme;
+  const st = tel.step && tel.step.attempted ? tel.step : null;
+  if (scheme === 'lift-first' || !st) {
+    const base = scheme === 'lift-first' ? '旧样例 assessStep' : '实验方案未触发';
+    setRow('res-scheme', st ? `${base} · 路径穿透 ${mm(st.pathPenetration || 0)}` : base);
+    return;
+  }
+  const parts = [];
+  if (st.success && st.chosen) parts.push(`选中 ${st.chosen}`);
+  parts.push(st.success ? '可行' : `拒绝·${STEP_REASON[st.reason] || st.reason}`);
+  if (Array.isArray(st.candidates) && st.candidates.length) {
+    const feasible = st.candidates.filter((c) => c.feasible).length;
+    parts.push(`候选 ${st.candidates.length} 可行 ${feasible}`);
+  }
+  if (st.headroomAvailable != null) parts.push(`净空 ${(st.headroomAvailable * 100).toFixed(1)} cm`);
+  if (st.headroomBlocked) parts.push('净空钳制');
+  parts.push(`路径穿透 ${mm(st.pathPenetration || 0)}`);
+  const tone = st.success ? 'good' : st.headroomBlocked ? 'warn' : 'bad';
+  setRow('res-scheme', parts.join(' · '), tone);
+}
+
+// Ground-motion / contact anomalies that should be visible while the capsule is
+// running. Penetration beyond the skin, a requested move that barely moved on
+// walkable ground, a step rejected for a geometric reason, and an unwalkable
+// support are all surfaced. Transient events accumulate in anomalyState so the
+// banner persists after the capsule settles against blocking geometry;
+// teleporting clears the state.
+function detectAnomalies(tel) {
+  const banner = $('anomaly-banner');
+  if (!tel) {
+    banner.hidden = true;
+    banner.replaceChildren();
+    return;
+  }
+  if (tel.penetration > 0.002) anomalyState.residualPen = Math.max(anomalyState.residualPen, tel.penetration);
+  if (
+    tel.grounded &&
+    tel.horizontalRequestedDistance > 0.02 &&
+    tel.horizontalActualDistance < tel.horizontalRequestedDistance * 0.4
+  ) {
+    anomalyState.blocked++;
+  }
+  if (tel.support && !tel.support.walkable) anomalyState.overLimit++;
+  if (tel.step && tel.step.attempted && !tel.step.success) anomalyState.rejected++;
+  if (tel.step && tel.step.attempted && (tel.step.pathPenetration || 0) > 0.002) {
+    anomalyState.pathPen = Math.max(anomalyState.pathPen, tel.step.pathPenetration);
+  }
+
+  const items = [];
+  if (anomalyState.residualPen > 0.002) items.push(`穿透异常：最大残留穿透 ${mm(anomalyState.residualPen)}，超过 2 mm 门限`);
+  if (anomalyState.blocked > 0) items.push(`地面运动受阻：${anomalyState.blocked} 帧请求位移实现不足 40%`);
+  if (anomalyState.overLimit > 0) {
+    items.push(`接触面超限：${anomalyState.overLimit} 帧压在坡度上限之外的面上（上限 ${controller.cfg.slopeLimitDeg.toFixed(0)}°）`);
+  }
+  if (anomalyState.rejected > 0) {
+    const reason = tel.step && tel.step.attempted ? STEP_REASON[tel.step.reason] || tel.step.reason : '几何门控';
+    items.push(`台阶判定拒绝：累计 ${anomalyState.rejected} 次，最近原因「${reason}」`);
+  }
+  if (anomalyState.pathPen > 0.002) items.push(`台阶路径穿透：最大 ${mm(anomalyState.pathPen)}`);
+
+  if (!items.length) {
+    banner.hidden = true;
+    banner.replaceChildren();
+    return;
+  }
+  banner.replaceChildren();
+  const title = document.createElement('div');
+  title.className = 'anomaly-title';
+  title.textContent = `运行异常标记 · ${items.length} 类`;
+  banner.appendChild(title);
+  for (const text of items) {
+    const row = document.createElement('div');
+    row.className = 'anomaly-item';
+    row.textContent = `• ${text}`;
+    banner.appendChild(row);
+  }
+  banner.hidden = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -1005,6 +1153,7 @@ function animate(now) {
   updateCamera(dtReal);
   updateMarkers(lastTelemetry);
   updateHUD();
+  detectAnomalies(lastTelemetry);
 
   uiAccum += dtReal;
   if (uiAccum >= 0.09) {
@@ -1044,11 +1193,46 @@ window.__capsuleDemo = {
   controller,
   course,
   runReplayChecks,
+  STEP_SCHEMES,
   get telemetry() {
     return lastTelemetry;
   },
   teleport: (id) => teleportToScenario(id),
   scenarios: scenarios.map((s) => s.id),
+  setStepScheme: (id) => setStepScheme(id),
+  get scheme() {
+    return controller.cfg.stepScheme;
+  },
+  fixedDt: FIXED_DT,
+  // Advance the REAL controller by a deterministic number of fixed steps,
+  // feeding the same keyboard-driven move intent the render loop uses. Browser
+  // E2E runs on a throttled software-rendered rAF, so wall-clock waits run a
+  // variable number of physics steps; this makes frame counts reproducible.
+  stepFrames: (n, move = { x: 0, z: -1 }, opts = {}) => {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const tel = controller.step(FIXED_DT, {
+        move,
+        jump: !!opts.jump,
+        speedScale: opts.speedScale ?? 1,
+        cameraYaw: camState.yaw,
+      });
+      lastTelemetry = tel;
+      lastStep = tel.step;
+      rememberFrameEvents(tel);
+      pushTrail({ x: controller.position.x, y: controller.feetY + 0.03, z: controller.position.z });
+      out.push(tel);
+    }
+    updateHUD();
+    renderPanel();
+    detectAnomalies(lastTelemetry);
+    return out;
+  },
+  get anomalies() {
+    const banner = $('anomaly-banner');
+    if (!banner || banner.hidden) return [];
+    return [...banner.querySelectorAll('.anomaly-item')].map((el) => el.textContent.replace(/^•\s*/, ''));
+  },
   setCamera: (yaw, pitch = 0.42, dist = 8.2) => {
     camState.yaw = yaw;
     camState.pitch = pitch;

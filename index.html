@@ -38,6 +38,7 @@
               <span><kbd>Shift</kbd> 加速</span>
               <span>拖拽旋转 · 滚轮缩放</span>
             </div>
+            <div id="anomaly-banner" class="anomaly-banner" hidden></div>
           </div>
           <div class="legend">
             <span class="legend-item"><i class="dot dot-support"></i>地面支撑点</span>
@@ -83,6 +84,22 @@
           </div>
 
           <div class="panel-block">
+            <h2>台阶处理方案</h2>
+            <div class="scheme-grid" id="scheme-grid" role="group" aria-label="台阶处理方案">
+              <button type="button" class="scheme-btn" data-scheme="lift-first">
+                <b>旧样例</b><small>抬升-前移-落脚</small>
+              </button>
+              <button type="button" class="scheme-btn" data-scheme="horizontal-first">
+                <b>水平扫描再抬升</b><small>先撞立面再抬</small>
+              </button>
+              <button type="button" class="scheme-btn" data-scheme="constrained-candidates">
+                <b>受限多候选求解</b><small>候选路径择优</small>
+              </button>
+            </div>
+            <p class="scheme-hint" id="scheme-hint"></p>
+          </div>
+
+          <div class="panel-block">
             <h2>场景传送</h2>
             <div class="scenario-grid" id="scenario-grid"></div>
           </div>
@@ -97,6 +114,7 @@
             <div class="result-row"><span>支撑面</span><b id="res-surface">—</b></div>
             <div class="result-row"><span>接触数</span><b id="res-contacts">—</b></div>
             <div class="result-row"><span>台阶判定</span><b id="res-step">—</b></div>
+            <div class="result-row"><span>方案候选 / 净空</span><b id="res-scheme">—</b></div>
             <div class="result-row"><span>滑动求解</span><b id="res-slide">—</b></div>
             <div class="result-row"><span>解穿 / 穿透</span><b id="res-depen">—</b></div>
             <div id="contact-list" class="contact-list"></div>

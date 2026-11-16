@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "replay": "node src/replay.js"
+    "replay": "node src/replay.js",
+    "step-experiment": "node src/experiments/steps.js",
+    "e2e": "node scripts/e2e-viewport.js"
   },
   "repository": {
     "type": "git",

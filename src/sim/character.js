@@ -9,6 +9,9 @@ import {
   maxPenetration,
   sweepCapsule,
 } from './colliders.js';
+import { runStepScheme, STEP_SCHEMES } from './step-schemes.js';
+
+export { STEP_SCHEMES };
 
 export const DEFAULT_CONFIG = Object.freeze({
   radius: 0.35,
@@ -22,6 +25,9 @@ export const DEFAULT_CONFIG = Object.freeze({
   slopeLimitDeg: 46,
   stepHeight: 0.32,
   stepTolerance: 0.015,
+  // 'lift-first' is the original assessStep phase. The two experiment solvers
+  // live in step-schemes.js and are selected by their STEP_SCHEMES ids.
+  stepScheme: 'lift-first',
   groundSnap: 0.26,
   skin: 0.004,
   supportTolerance: 0.006,
@@ -555,32 +561,52 @@ export class CharacterController {
       supportProjected = planeDelta;
       slide = slideMove(this.position, shape, planeDelta, colliders, cfg, { ignoreWalkable: true });
       this.position = slide.position;
-      const actualH = Math.hypot(this.position.x - prePos.x, this.position.z - prePos.z);
-      const wantedH = Math.hypot(horizontalRequested.x, horizontalRequested.z);
 
       // ---- phase B: step assessment (separate from walking) --------------
       // Triggered by realised motion being blocked, not by a lucky contact
-      // list: a steep wall or a riser both count. At full walking speed one
-      // frame covers only a few centimetres, so the block is detected on
-      // geometry too (a tread within step height right in front).
+      // list: a steep wall or a riser both count. On a sloped support the
+      // requested displacement is projected onto the support plane, so the
+      // "wanted" length is the projected 3D move — comparing against only its
+      // horizontal component would treat ordinary ramp climbing as a block and
+      // fire the step solver on every frame.
       const wantForStep = Math.hypot(horizontalRequested.x, horizontalRequested.z);
-      let triggered = requestsMove && actualH < wantedH * 0.9;
+      const wanted3D = Math.hypot(planeDelta.x, planeDelta.y, planeDelta.z);
+      const realised3D = Math.hypot(
+        this.position.x - prePos.x,
+        this.position.y - prePos.y,
+        this.position.z - prePos.z,
+      );
+      let triggered = requestsMove && realised3D < wanted3D * 0.9;
       if (!triggered && requestsMove && wantForStep > 1e-5) {
         const ahead = advanceProbe(this.position, this.support, shape, horizontalRequested, colliders, cfg);
         if (ahead) triggered = true;
       }
       if (cfg.stepHeight > 0 && triggered) {
         {
-          stepInfo = assessStep(prePos, shape, horizontalRequested, preSupport, colliders, cfg);
+          if (cfg.stepScheme === 'lift-first') {
+            stepInfo = assessStep(prePos, shape, horizontalRequested, preSupport, colliders, cfg);
+          } else {
+            stepInfo = runStepScheme(cfg.stepScheme, prePos, shape, horizontalRequested, preSupport, colliders, cfg);
+          }
           if (stepInfo.success) {
-            this.position = stepInfo.position;
-            this.support = stepInfo.support;
-            this.velocity.y = 0;
-            this.steppedThisFrame = true;
-            steppedForward = true;
-            this.grounded = true;
-            this.stats.stepUps++;
-            events.push('step-up');
+            // A millimetre-scale "rise" is support-plane motion on a shallow
+            // slope, not a real step: keep the solver's forward placement but do
+            // not emit a step-up event or inflate the step counter.
+            if (stepInfo.rise > 0.01) {
+              this.position = stepInfo.position;
+              this.support = stepInfo.support;
+              this.velocity.y = 0;
+              this.steppedThisFrame = true;
+              steppedForward = true;
+              this.grounded = true;
+              this.stats.stepUps++;
+              events.push('step-up');
+            } else {
+              stepInfo.success = false;
+              stepInfo.reason = stepInfo.partial ? 'partial-forward' : 'no-rise';
+              this.stats.stepRejections++;
+              events.push('step-rejected');
+            }
           } else {
             this.stats.stepRejections++;
             events.push('step-rejected');

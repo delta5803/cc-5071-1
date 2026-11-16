@@ -211,6 +211,50 @@ input[type="range"]::-moz-range-thumb {
 .scenario-btn b { display: block; font-size: 12px; font-weight: 600; color: inherit; margin-bottom: 2px; }
 .scenario-btn small { color: var(--text-faint); font-size: 10.5px; font-family: var(--mono); }
 
+.scheme-grid { display: grid; grid-template-columns: 1fr; gap: 7px; }
+.scheme-btn {
+  appearance: none; cursor: pointer; font: inherit;
+  display: flex; flex-direction: column; gap: 2px;
+  text-align: left; line-height: 1.35;
+  color: var(--text-dim);
+  background: #19202c; border: 1px solid var(--line);
+  border-radius: 7px; padding: 8px 10px;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.scheme-btn:hover { background: #1f2836; border-color: #354153; color: var(--text); }
+.scheme-btn.active { border-color: var(--accent-dim); background: #17313a; color: #b9edf5; }
+.scheme-btn b { font-size: 12px; font-weight: 600; color: inherit; }
+.scheme-btn small { color: var(--text-faint); font-size: 10.5px; font-family: var(--mono); }
+.scheme-btn.active small { color: #7fb9c3; }
+.scheme-hint {
+  margin: 9px 0 0; font-size: 11px; line-height: 1.55;
+  color: var(--text-faint);
+}
+.scheme-hint b { color: var(--contact); font-weight: 600; }
+
+.anomaly-banner {
+  position: absolute; left: 14px; right: 14px; bottom: 58px;
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 9px 13px;
+  border-radius: 8px;
+  background: rgba(58, 26, 32, 0.92);
+  border: 1px solid var(--blocked);
+  color: #ffc4cf;
+  font-size: 11.5px; line-height: 1.45;
+  backdrop-filter: blur(6px);
+  z-index: 6;
+}
+.anomaly-banner[hidden] { display: none; }
+.anomaly-banner .anomaly-title {
+  font-weight: 700; letter-spacing: 0.04em;
+  display: flex; align-items: center; gap: 7px;
+}
+.anomaly-banner .anomaly-title::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--blocked); box-shadow: 0 0 8px var(--blocked);
+}
+.anomaly-banner .anomaly-item { color: #f1d2d7; font-family: var(--mono); font-size: 10.5px; }
+
 .results .result-row {
   display: flex; justify-content: space-between; gap: 12px;
   padding: 5px 0; font-size: 12px;

@@ -27,8 +27,10 @@ npm run dev
 ### 视窗内可做的事
 
 - **调整碰撞体**：半径 0.18–0.75 m、高度 0.8–2.6 m、坡度上限 20°–70°、台阶高度 0–0.60 m。滑杆直接调用 `CharacterController.configure()`，会同帧解穿并刷新支撑，角色网格随之重建。
+- **切换台阶方案**：右栏「台阶处理方案」分段控件在旧样例 `lift-first`、`horizontal-first`（先水平扫描再抬升）、`constrained-candidates`（受限多候选求解）之间切换，调用 `controller.configure({ stepScheme })`。结果区新增「方案候选 / 净空」行，显示选中候选、拒绝原因、净空预算与路径穿透。
+- **运行异常标记**：视窗底部红色横幅累计标记地面运动受阻、接触面超坡度上限、台阶被拒、残留 / 路径穿透超 2 mm 等异常，传送后清空。
 - **场景传送**：起点广场、16° 上坡、坡顶平台、22° 下坡、0.22 m 台阶、1.05 m 窄门、0.38 m 高台、58° 陡坡、凹角。每次传送都调用 `teleport()` 做真实支撑探测，不是改模型坐标。
-- **结果区（地面运动与接触）**：请求位移、实际位移与达成率、支撑法线与坡度角、支撑面投影 Δ、支撑点、支撑面、接触数与接触点/法线列表、台阶判定、滑动求解迭代与平面数、解穿次数与残留穿透。全部取自 `controller.step()` 返回的当帧遥测。
+- **结果区（地面运动与接触）**：请求位移、实际位移与达成率、支撑法线与坡度角、支撑面投影 Δ、支撑点、支撑面、接触数与接触点/法线列表、台阶判定、方案候选/净空、滑动求解迭代与平面数、解穿次数与残留穿透。全部取自 `controller.step()` 返回的当帧遥测。
 - **重放检查**：页面内直接调用与 CLI 相同的 `runReplayChecks()`，渲染 36 项边界场景断言。
 - **图例**：绿=地面支撑点、橙=接触点与法线、红=受阻位移、紫=台阶抬升。标记关闭深度测试，被墙体遮挡时仍可见。
 
@@ -40,7 +42,7 @@ npm run dev
 
 1. **可行位移** — `slideMove()` 用保守胶囊扫描推进。扫描以距离查询给出的平面下界作为安全步长（`allowed = separation / -dot(dir, normal)`，查询余量 ≥ 步长），撞到表面后把剩余位移交给 `clipVelocity()` 的有界多平面求解：1 平面解析投影、2 平面行列式求解、3 平面 Cramer 求解并检查可行性；迭代有硬上限，退化时退回 2 平面并停止，不震荡也不无限循环。
 2. **地面支撑** — `probeSupport()` 只做接触查询，找不到支撑就不移动；`supportFromContacts()` 以 `angle <= slopeLimit` 判定可行走。坡面行走用 `projectOnSupport()` 把水平位移投影到支撑面：`dy = -(dx·n.x + dz·n.z)/n.y`，因此实测抬升必然等于水平距离 × tan(坡度)，这是被几何关系验证的，而不是采样出来的近似值。
-3. **台阶判定** — `assessStep()` 是独立阶段：先用足迹射线做几何门控（找出脚下前方抬升 ≤ stepHeight 的可踏面），再抬升整个 stepHeight、沿实测踏面向前辅助（不超过一个半径）、下落，最后用落点射线与 `capsuleFits()` 校验。抬升超过上限时以 `rise-exceeds-limit` 拒绝，角色位置丝毫未动。
+3. **台阶判定** — 由 `cfg.stepScheme` 选择实现。旧样例 `assessStep()` 先用足迹射线做几何门控（找出脚下前方抬升 ≤ stepHeight 的可踏面），再抬升整个 stepHeight、沿实测踏面向前辅助（不超过一个半径）、下落，最后用落点射线与 `capsuleFits()` 校验。两套实验求解器在 `src/sim/step-schemes.js`：`horizontal-first` 先做完整水平扫掠（立面阻挡记为 `riser-block`）再按实测 rise 加球心下垂量抬升；`constrained-candidates` 构造抬升优先 / 对角切角 / 贴坡爬升三条有界候选，逐条过扫掠截断、行程、路径穿透、净空门控，取首个可行者。踏面法线门控（normal.y ≥ 0.94）把斜坡排除在台阶之外，坡面只走阶段 A 的支撑面投影。抬升超过上限时以 `rise-exceeds-limit` 拒绝，角色位置丝毫未动。完整对照见 [`docs/capsule-step-experiment.md`](docs/capsule-step-experiment.md)。
 
 **接触**：`capsuleBoxContact()` 对胶囊轴线做黄金分割搜索，得到与 OBB 的真实最近特征（面、棱、角），斜坡与棱边法线精确，而不是采样球体探测。
 
@@ -54,18 +56,35 @@ npm run replay
 
 无头重放同一套输入脚本（窄门、凹角、4 级 0.22 m 台阶、0.38 m 高台、16°/22°/58° 坡、跳跃、贴墙滑动、碰撞体缩放、全程穿越），逐帧核对穿透、实际距离与状态转换。全部 36 项通过时退出码为 0。它只是图形入口的自动化备份。
 
+```bash
+npm run step-experiment
+```
+
+在六个自包含 OBB 场景（矮顶台阶、极矮顶、24° 斜坡、超限台阶、大步长、平地）上对照两套台阶方案，分别跑一次性求解和真实控制器驱动。穿透量经三路独立复算（终点查询 A、重建控制器再查询 C、沿真实扫掠折线每 2 cm 子采样 B），断言 A=C、B≥A、B<2 mm，并把穿透量与可达位移写入 `experiments/step-results.{json,md}`（附 sha256）。数据全部由代码复算，文档不手填测量值。当前 66 项健全性断言。
+
+```bash
+npm run e2e
+```
+
+启动真实 Vite dev server 与 headless Chromium（依赖 `scripts/fetch-browser-libs.sh` 提取到 `local-libs/` 的运行库），经 `window.__capsuleDemo` 驱动视窗里的同一个控制器，断言地面运动、支撑 / 接触位置、方案切换、碰撞体缩放、暂停态与异常横幅，截图和 JSON 写入 `experiments/e2e/`。这是图形入口的真实浏览器验证，CLI 不替代它。
+
 ## 文件
 
 ```
-index.html            演练视窗外壳（图形入口）
-src/styles.css        界面样式
-src/main.js           Three.js 场景、输入、相机、结果区、重放面板
-src/sim/math.js       向量与 OBB 旋转
-src/sim/colliders.js  胶囊-OBB 接触、扫描、多平面裁剪、解穿
-src/sim/rays.js       OBB 射线、支撑足迹
-src/sim/character.js  角色控制器三阶段与遥测
-src/course.js         场景几何（坡、台阶、窄门、高台、陡坡、凹角）
-src/replay.js         确定性重放与 36 项边界检查
+index.html                        演练视窗外壳（图形入口）
+src/styles.css                    界面样式（含方案分段控件、异常横幅）
+src/main.js                       Three.js 场景、输入、相机、结果区、方案切换、重放面板
+src/sim/math.js                   向量与 OBB 旋转
+src/sim/colliders.js              胶囊-OBB 接触、扫描、多平面裁剪、解穿
+src/sim/rays.js                   OBB 射线、支撑足迹
+src/sim/character.js              角色控制器三阶段与遥测、台阶方案接入
+src/sim/step-schemes.js           两套实验台阶求解器（水平优先 / 受限多候选）
+src/course.js                     场景几何（坡、台阶、窄门、高台、陡坡、凹角）
+src/replay.js                     确定性重放与 36 项边界检查
+src/experiments/steps.js          台阶方案实验与三路穿透复算
+scripts/e2e-viewport.js           视窗浏览器 E2E（25 项断言 + 证据截图）
+scripts/fetch-browser-libs.sh     rootless 拉取 Chromium 运行库到 local-libs/
+docs/capsule-step-experiment.md   台阶实验结论、待验证假设与数据复算说明
 ```
 
 场景的地面支撑点、接触点与法线、位移箭头都直接来自控制器每帧的输出；界面上没有任何一项是用固定数据冒充的。
